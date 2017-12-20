@@ -11,13 +11,11 @@ import org.training.spark.util.{KafkaRedisProperties, RedisClient}
 
 object UserClickCountAnalytics {
   def main(args: Array[String]): Unit = {
-    var masterUrl = "local[1]"
-    if (args.length > 0) {
-      masterUrl = args(0)
+    val conf = new SparkConf().setAppName("UserClickCountAnalytics")
+    if (args.length == 0) {
+      conf.setMaster("local[1]")
     }
 
-    // Create a StreamingContext with the given master URL
-    val conf = new SparkConf().setMaster(masterUrl).setAppName("UserClickCountStat")
     val ssc = new StreamingContext(conf, Seconds(5))
 
     // Kafka configurations
@@ -48,12 +46,17 @@ object UserClickCountAnalytics {
       rdd.foreachPartition(partitionOfRecords => {
         val jedis = RedisClient.pool.getResource
         partitionOfRecords.foreach(pair => {
-          val uid = pair._1
-          val clickCount = pair._2
-          jedis.hincrBy(clickHashKey, uid, clickCount)
-          println(s"Update uid ${uid} to ${clickCount}.")
-
+          try {
+            val uid = pair._1
+            val clickCount = pair._2
+            jedis.hincrBy(clickHashKey, uid, clickCount)
+            println(s"Update uid ${uid} to ${clickCount}.")
+          } catch {
+            case e: Exception => println("error:" + e)
+          }
         })
+        // destroy jedis object, please notice pool.returnResource is deprecated
+        jedis.close()
       })
     })
 

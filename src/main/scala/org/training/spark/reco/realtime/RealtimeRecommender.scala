@@ -26,18 +26,24 @@ object RealtimeRecommender {
 
     messages.map(_._2).map{ event =>
       NewClickEvent.parseFrom(event)
-    }.mapPartitions { iter =>
-      //val jedis = RedisClient.pool.getResource
-      iter.map { event =>
-        println("NewClickEvent:" + event)
-        val userId = event.getUserId
-        val itemId = event.getItemId
-        val key = "II:" + itemId
-        //val value = jedis.get(key)
-        //jedis.set("RUI:" + userId, value)
-        println("Recommend to user:" + userId + ", items:")
-      }
-    }.print()
+    }.foreachRDD { rdd =>
+        rdd.foreachPartition { partition =>
+          val jedis = RedisClient.pool.getResource
+          partition.foreach { event =>
+            println("NewClickEvent:" + event)
+            val userId = event.getUserId
+            val itemId = event.getItemId
+            val key = "II:" + itemId
+            val value = jedis.get(key)
+            if (value != null) {
+              jedis.set("RUI:" + userId, value)
+              print("Finish recommendation to user:" + userId)
+            }
+          }
+          // destroy jedis object, please notice pool.returnResource is deprecated
+          jedis.close()
+        }
+    }
     // Start the computation
     ssc.start()
     ssc.awaitTermination()
